@@ -3,31 +3,39 @@ import * as npmlog from 'npmlog';
 import * as path from 'path';
 import * as util from 'util';
 import {
+  createRepo,
+  removeRepos,
   logMessage,
   changeDir,
   resetDir,
   catchError,
-  clearMessage,
-  createRepo
+  clearMessage
 } from '@gitsync/test';
-import Sync, {SyncOptions} from "..";
+import Sync from "../index";
 import git, {Git} from "git-cli-wrapper";
 import {Config} from "@gitsync/config";
 import log from '@gitsync/log';
 
-const sync = async (source: Git, options: SyncOptions, instance: Sync = null) => {
+const sync = async (source: Git, options: any, instance: Sync = null) => {
   changeDir(source);
   const sync = instance || new Sync();
-  options.yes = true;
-  await sync.sync(options);
+  await sync.sync(Object.assign({
+    // TODO
+    $0: '',
+    _: [],
+  }, options));
   resetDir();
 };
 
-describe('sync command', () => {
-  afterEach(() => {
-    clearMessage();
-  })
+afterAll(() => {
+  removeRepos();
+});
 
+afterEach(() => {
+  clearMessage();
+})
+
+describe('sync command', () => {
   test('sync commits', async () => {
     const source = await createRepo();
     await source.commitFile('test.txt');
@@ -175,74 +183,6 @@ describe('sync command', () => {
     expect(tags).toContain('@test/log@0.1.0');
     expect(tags).not.toContain('@test/test@0.1.0');
     expect(tags).not.toContain('@test/api@0.1.0');
-  });
-
-  test('removeTagPrefix option', async () => {
-    const source = await createRepo();
-    await source.commitFile('test.txt');
-    await Promise.all([
-      source.run(['tag', '@test/test@0.1.0']),
-      source.run(['tag', '@test/test@0.2.0']),
-      source.run(['tag', '@test/api@0.1.1']),
-    ]);
-
-    const target = await createRepo();
-
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      removeTagPrefix: '@test/test@',
-    });
-
-    const tags = await target.run(['tag']);
-    expect(tags).toContain('0.1.0');
-    expect(tags).toContain('0.2.0');
-    expect(tags).not.toContain('@test/api@0.1.1');
-  });
-
-  test('addTagPrefix option', async () => {
-    const source = await createRepo();
-    await source.commitFile('test.txt');
-    await Promise.all([
-      source.run(['tag', '0.1.0']),
-      source.run(['tag', '0.2.0']),
-    ]);
-
-    const target = await createRepo();
-
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      addTagPrefix: 'v',
-    });
-
-    const tags = await target.run(['tag']);
-    expect(tags).toContain('v0.1.0');
-    expect(tags).toContain('v0.2.0');
-  });
-
-  test('removeTagPrefix and addTagPrefix option', async () => {
-    const source = await createRepo();
-    await source.commitFile('test.txt');
-    await Promise.all([
-      source.run(['tag', '@test/test@0.1.0']),
-      source.run(['tag', '@test/test@0.2.0']),
-      source.run(['tag', '@test/api@0.3.0']),
-    ]);
-
-    const target = await createRepo();
-
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      addTagPrefix: 'v',
-      removeTagPrefix: '@test/test@'
-    });
-
-    const tags = await target.run(['tag']);
-    expect(tags).toContain('v0.1.0');
-    expect(tags).toContain('v0.2.0');
-    expect(tags).not.toContain('0.3.0');
   });
 
   test('sync tag not found', async () => {
@@ -1604,105 +1544,5 @@ To reset to previous HEAD:
     });
 
     expect(error).toEqual(new Error(`Repository "${target.dir}" has unmerged conflict branches "feature/branch-gitsync-conflict, master-gitsync-conflict", please merge or remove branches before syncing.`));
-  });
-
-  test('rebase causes same commit subject have same commit time', async () => {
-    const source = await createRepo();
-
-    const now = new Date().getTime() / 1000;
-    await source.addFile('test.txt');
-    await source.run(['commit', '-am', 'add something'], {env: {GIT_AUTHOR_DATE: now - 1}});
-    await source.addFile('test2.txt');
-    await source.run(['commit', '-am', 'add something'], {env: {GIT_AUTHOR_DATE: now}});
-
-    // Committer date becomes the same
-    await source.run(['rebase', '-f', '--root']);
-
-    // Sync branch will trigger `getTargetHash`
-    await source.run(['checkout', '-b', 'branch']);
-
-    const target = await createRepo();
-    const error = await catchError(async () => {
-      await sync(source, {
-        target: target.dir,
-        sourceDir: '.',
-      });
-    });
-
-    expect(error).toBeUndefined();
-  });
-
-  test('filter to ignore one file', async () => {
-    const source = await createRepo();
-    await source.commitFile('test.txt');
-    await source.commitFile('ignore.txt');
-
-    const target = await createRepo();
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      filter: [':^ignore.txt']
-    });
-
-    expect(fs.existsSync(target.getFile('test.txt'))).toBeTruthy();
-    expect(fs.existsSync(target.getFile('ignore.txt'))).toBeFalsy();
-  });
-
-  test('filter to ignore multi files', async () => {
-    const source = await createRepo();
-    await source.commitFile('test.txt');
-    await source.commitFile('ignore.txt');
-    await source.commitFile('dir/ignore.txt');
-
-    const target = await createRepo();
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      filter: [
-        ':^ignore.txt',
-        ':^dir/*.txt'
-      ]
-    });
-
-    expect(fs.existsSync(target.getFile('test.txt'))).toBeTruthy();
-    expect(fs.existsSync(target.getFile('ignore.txt'))).toBeFalsy();
-    expect(fs.existsSync(target.getFile('dir/ignore.txt'))).toBeFalsy();
-  });
-
-  test('filter to sync multi directories', async () => {
-    const source = await createRepo();
-    await source.commitFile('dir1/test.txt');
-    await source.commitFile('dir2/test.txt');
-    await source.commitFile('dir3/test.txt');
-
-    const target = await createRepo();
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      filter: [
-        'dir1/',
-        'dir2/'
-      ]
-    });
-
-    expect(fs.existsSync(target.getFile('dir1/test.txt'))).toBeTruthy();
-    expect(fs.existsSync(target.getFile('dir2/test.txt'))).toBeTruthy();
-    expect(fs.existsSync(target.getFile('dir3/test.txt'))).toBeFalsy();
-  });
-
-  test('filter to sync one file', async () => {
-    const source = await createRepo();
-    await source.commitFile('test.txt');
-    await source.commitFile('sync.txt');
-
-    const target = await createRepo();
-    await sync(source, {
-      target: target.dir,
-      sourceDir: '.',
-      filter: ['sync.txt']
-    });
-
-    expect(fs.existsSync(target.getFile('sync.txt'))).toBeTruthy();
-    expect(fs.existsSync(target.getFile('test.txt'))).toBeFalsy();
   });
 });
