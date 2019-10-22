@@ -797,10 +797,10 @@ Commits
     });
 
     await source.run(['checkout', '-b', 'branch']);
-    await source.commitFile('test.txt', 'branch content');
+    await source.commitFile('test.txt', 'branch content', 'change by branch');
 
     await source.run(['checkout', 'master']);
-    await source.commitFile('test.txt', 'master content');
+    await source.commitFile('test.txt', 'master content', 'change by master');
 
     try {
       await source.run(['merge', 'branch']);
@@ -932,10 +932,10 @@ Please follow the steps to resolve the conflicts:
     await source.commitFile('both-modify-but-delete-after-merge.txt', "a");
 
     await source.run(['checkout', '-b', 'branch']);
-    await source.commitFile('both-modify-but-delete-after-merge.txt', "b");
+    await source.commitFile('both-modify-but-delete-after-merge.txt', "b", 'change by branch');
 
     await source.run(['checkout', 'master']);
-    await source.commitFile('both-modify-but-delete-after-merge.txt', "c");
+    await source.commitFile('both-modify-but-delete-after-merge.txt', "c", 'change by master');
 
     try {
       await source.run([
@@ -973,10 +973,10 @@ Please follow the steps to resolve the conflicts:
     await source.commitFile('modify-after-merge.txt', "a\n\nb");
 
     await source.run(['checkout', '-b', 'branch']);
-    await source.commitFile('modify-after-merge.txt', "a\n\nc");
+    await source.commitFile('modify-after-merge.txt', "a\n\nc", 'change by branch');
 
     await source.run(['checkout', 'master']);
-    await source.commitFile('modify-after-merge.txt', "c\n\nc");
+    await source.commitFile('modify-after-merge.txt', "c\n\nc", 'change by master');
 
     await source.run([
       'merge',
@@ -1282,10 +1282,10 @@ To reset to previous HEAD:
     await source.commitFile('test.txt', 'initial');
 
     await source.run(['checkout', '-b', 'branch']);
-    await source.commitFile('test.txt', 'branch');
+    await source.commitFile('test.txt', 'branch', 'change by branch');
 
     await source.run(['checkout', 'master']);
-    await source.commitFile('test.txt', 'master');
+    await source.commitFile('test.txt', 'master', 'change by master');
 
     try {
       await source.run(['merge', 'branch']);
@@ -1558,6 +1558,54 @@ To reset to previous HEAD:
     expect(logMessage()).toContain('Commits: new: 0, exists: 1, source: 1, target: 1');
   });
 
+  test('sync branch at empty commit from root directory wont lost empty commit', async () => {
+    const source = await createRepo();
+
+    await source.commitFile('test.txt');
+    await source.run(['checkout', '-b', 'branch']);
+    await source.commitFile('test2.txt');
+    await source.run(['checkout', 'master']);
+    await source.run([
+      'merge',
+      '--no-ff',
+      'branch',
+    ]);
+    await source.run(['branch', '-d', 'branch']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+    });
+
+    // Commit exists, wont be reset
+    expect(await target.run(['log', '--format=%s', '-1'])).toBe("Merge branch 'branch'");
+  });
+
+  test('sync branch at empty commit from sub directory will lost empty commit', async () => {
+    const source = await createRepo();
+
+    await source.commitFile('package/test.txt');
+    await source.run(['checkout', '-b', 'branch']);
+    await source.commitFile('package/test2.txt');
+    await source.run(['checkout', 'master']);
+    await source.run([
+      'merge',
+      '--no-ff',
+      'branch',
+    ]);
+    await source.run(['branch', '-d', 'branch']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: 'package',
+    });
+
+    // Commit not exists, have been be reset
+    expect(await target.run(['log', '--format=%s', '-1'])).toContain("add package/test2.txt");
+  });
+
   test('getTargetHash fallback to search without date', async () => {
     const source = await createRepo();
     await source.commitFile('test.txt');
@@ -1704,5 +1752,440 @@ To reset to previous HEAD:
 
     expect(fs.existsSync(target.getFile('sync.txt'))).toBeTruthy();
     expect(fs.existsSync(target.getFile('test.txt'))).toBeFalsy();
+  });
+
+  test('squash to new repo', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    await source.commitFile('test2.txt');
+    await source.commitFile('test3.txt');
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      targetDir: 'package-name',
+      squash: true,
+    });
+
+    expect(fs.existsSync(target.getFile('package-name/test.txt'))).toBeTruthy();
+    expect(fs.existsSync(target.getFile('package-name/test2.txt'))).toBeTruthy();
+    expect(fs.existsSync(target.getFile('package-name/test3.txt'))).toBeTruthy();
+
+    const result = await target.run(['log', '--format=%s']);
+    expect(result).toBe(`chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ${endHash}`);
+  });
+
+  test('squash to repo contains commit', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    const startHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      targetDir: 'package-name',
+    });
+
+    await source.commitFile('test2.txt');
+    await source.commitFile('test3.txt');
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      targetDir: 'package-name',
+      squash: true,
+    });
+
+    expect(fs.existsSync(target.getFile('package-name/test2.txt'))).toBeTruthy();
+    expect(fs.existsSync(target.getFile('package-name/test3.txt'))).toBeTruthy();
+
+    const result = await target.run(['log', '--format=%s', '-1']);
+    expect(result).toBe(`chore(sync): squash commit from ${startHash} to ${endHash}`);
+  });
+
+  test('squash from a merge', async () => {
+    const source = await createRepo();
+
+    await source.commitFile('test.txt');
+    await source.run(['checkout', '-b', 'branch']);
+    await source.commitFile('test2.txt');
+    await source.run(['checkout', 'master']);
+    await source.run([
+      'merge',
+      '--no-ff',
+      'branch',
+    ]);
+    await source.run(['branch', '-d', 'branch']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+    });
+
+    const startHash = await source.run(['rev-parse', 'HEAD']);
+    await source.commitFile('test3.txt');
+    await source.commitFile('test4.txt');
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    expect(fs.existsSync(target.getFile('test3.txt'))).toBeTruthy();
+    expect(fs.existsSync(target.getFile('test4.txt'))).toBeTruthy();
+
+    const result = await target.run(['log', '--format=%s', '-1']);
+    expect(result).toBe(`chore(sync): squash commit from ${startHash} to ${endHash}`);
+  });
+
+  test('squash new branch start from merge', async () => {
+    const source = await createRepo();
+
+    await source.commitFile('test.txt');
+    await source.run(['checkout', '-b', 'branch']);
+    await source.commitFile('test2.txt');
+    await source.run(['checkout', 'master']);
+    await source.run([
+      'merge',
+      '--no-ff',
+      'branch',
+    ]);
+    await source.run(['branch', '-d', 'branch']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+    });
+
+    const startHash = await source.run(['rev-parse', 'HEAD']);
+    await source.run(['checkout', '-b', 'branch']);
+    await source.commitFile('test3.txt');
+    await source.commitFile('test4.txt');
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    expect(logMessage()).toContain('Branch "master" is up to date, skipping');
+
+    await target.run(['checkout', 'branch']);
+    expect(fs.existsSync(target.getFile('test3.txt'))).toBeTruthy();
+    expect(fs.existsSync(target.getFile('test4.txt'))).toBeTruthy();
+
+    const result = await target.run(['log', '--format=%s', '-1']);
+    expect(result).toBe(`chore(sync): squash commit from ${startHash} to ${endHash}`);
+  });
+
+  test('squash expand logs', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    await source.commitFile('test2.txt');
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      targetDir: 'package-name',
+      squash: true,
+    });
+
+    const result = await target.run(['log', '--format=%s']);
+    expect(result).not.toContain('\n');
+    expect(result).toBe(`chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ${endHash}`);
+
+    // Sync again won't create commit
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      targetDir: 'package-name',
+    });
+    const result2 = await target.run(['log', '--format=%s']);
+    expect(result2).not.toContain('\n');
+    expect(result2).toBe(`chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ${endHash}`);
+
+    // Sync back won't create commit
+    await sync(target, {
+      target: source.dir,
+      sourceDir: 'package-name',
+      targetDir: '.',
+    });
+    const result3 = await source.run(['log', '--format=%s', '-1']);
+    expect(result3).toContain(`add test2.txt`);
+  });
+
+  test('squash conflict will create conflict branch', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt', 'initial content', 'init');
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+    });
+
+    // Generate conflict content
+    await source.commitFile('test.txt', 'new content by source repo', 'update by source repo');
+    await target.commitFile('test.txt', 'new content by target repo', 'update by target repo');
+
+    await source.commitFile('test2.txt');
+
+    // Source repository don't contain target repository, so conflict will not be resolved and created conflict branch
+    const error = await catchError(async () => {
+      await sync(source, {
+        target: target.dir,
+        sourceDir: '.',
+        squash: true,
+      });
+    });
+    expect(error).toEqual(new Error('conflict'));
+
+    expect(fs.readFileSync(target.getFile('test.txt'), 'utf-8')).toBe('new content by target repo');
+
+    const result = await target.run(['branch', '-l']);
+    expect(result).toContain('master-gitsync-conflict');
+
+    await target.run(['checkout', 'master-gitsync-conflict']);
+    expect(fs.readFileSync(target.getFile('test2.txt'), 'utf-8')).toBe('test2.txt');
+  });
+
+  test('squash repo not contains will create conflict branch', async () => {
+    // todo wait util refactoring common commit progress for normal and squashed commits
+  });
+
+  test('squash create tag from new branch new commits', async () => {
+    const source = await createRepo();
+
+    await source.commitFile('test.txt');
+    await source.run(['tag', '1.0.0']);
+
+    await source.commitFile('test2.txt');
+    await source.run(['tag', '-m', 'Annotated tag', '1.0.1']);
+
+    const target = await createRepo();
+
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    const tags = await target.run(['tag', '-l', '-n99']);
+    expect(tags).toContain('1.0.0           chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ' + await source.run(['rev-parse', 'HEAD']));
+    expect(tags).toContain('1.0.1           Annotated tag');
+  });
+
+  test('squash create tag from exists branch new commits', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    const startHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    // Create tag on new commit
+    await source.commitFile('test2.txt');
+    await source.run(['tag', '1.0.1']);
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    const tags = await target.run(['tag', '-l', '-n99']);
+    expect(tags).toContain(`1.0.1           chore(sync): squash commit from ${startHash} to ${endHash}`);
+  });
+
+  test('squash create tag from exists branch and exists commits', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    const tagHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    // Create tag on synced commit
+    await source.run(['tag', '1.0.0', tagHash]);
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    const tags = await target.run(['tag', '-l', '-n99']);
+    expect(tags).toContain('1.0.0           chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ' + tagHash);
+  });
+
+  test('squash create tag from exists branch new and exists commits ', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    const tagHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    // Create tag on synced commit
+    await source.run(['tag', '1.0.0', tagHash]);
+
+    // Create tag on new commit
+    await source.commitFile('test2.txt');
+    await source.run(['tag', '1.0.1']);
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    const tags = await target.run(['tag', '-l', '-n99']);
+    expect(tags).toContain('1.0.0           chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ' + tagHash);
+    expect(tags).toContain(`1.0.1           chore(sync): squash commit from ${tagHash} to ${endHash}`);
+  });
+
+  test('squash create tag that commit not in sync dir', async () => {
+    const source = await createRepo();
+    await source.commitFile('package-name/test.txt');
+    await source.commitFile('test.txt');
+    await source.run(['tag', '1.0.0']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: 'package-name',
+      squash: true,
+    });
+
+    const tags = await target.run(['tag']);
+    expect(tags).toContain('1.0.0');
+  });
+
+  test('squash create tag at squashed commit', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    await target.run(['tag', '1.0.0']);
+    await sync(target, {
+      target: source.dir,
+      sourceDir: '.',
+    });
+
+    const tags = await source.run(['tag']);
+    expect(tags).toContain('1.0.0');
+  });
+
+  test('squash multi branches', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    const startHash = await source.run(['rev-parse', 'HEAD']);
+
+    // Git branches sorted by alphabetical order, while sync will move master branch to first
+    await source.run(['checkout', '-b', 'before-master']);
+    await source.commitFile('test2.txt');
+    const endHash = await source.run(['rev-parse', 'HEAD']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+    const result = await target.run(['log', '--format=%s', '--all']);
+    expect(result).toBe(`chore(sync): squash commit from ${startHash} to ${endHash}
+chore(sync): squash commit from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ${startHash}`);
+  });
+
+  test('squash throw error when base branch not exists', async () => {
+    const source = await createRepo();
+    const target = await createRepo();
+    const error = await catchError(async () => {
+      await sync(source, {
+        target: target.dir,
+        sourceDir: '.',
+        squash: true,
+        squashBaseBranch: 'not-exists'
+      });
+    });
+    expect(error).toEqual(new Error('Squash branch "not-exists" does not exists'));
+  });
+
+  test('squash do not create conflict branch on new branch', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt', 'test');
+    await source.run(['checkout', '-b', 'test']);
+    await source.commitFile('test.txt', 'change', 'change');
+    await source.run(['checkout', 'master']);
+    await source.run(['merge', 'test']);
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      squash: true,
+    });
+
+
+  });
+
+  test('allow sourceDir contains custom name after # sign', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.#custom-name',
+    });
+
+    expect(fs.existsSync(target.getFile('test.txt'))).toBe(true);
+  });
+
+  test('## in sourceDir will be replace to #', async () => {
+    const source = await createRepo();
+    await source.commitFile('#123/test.txt');
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '##123',
+    });
+
+    expect(fs.existsSync(target.getFile('test.txt'))).toBe(true);
   });
 });

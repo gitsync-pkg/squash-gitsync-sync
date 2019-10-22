@@ -32,6 +32,8 @@ export interface SyncOptions {
   addTagPrefix?: string,
   removeTagPrefix?: string,
   filter?: string[],
+  squash?: boolean,
+  squashBaseBranch?: string,
 }
 
 export interface SyncArguments extends Arguments<SyncOptions> {
@@ -59,6 +61,7 @@ class Sync {
     preserveCommit: true,
     addTagPrefix: '',
     removeTagPrefix: '',
+    squashBaseBranch: 'master',
   };
   private initHash: string;
   private source: Git;
@@ -80,6 +83,7 @@ class Sync {
   private env: StringStringMap;
   private sourcePaths: string[] = [];
   private targetPaths: string[] = [];
+  private targetSquashes: any = {};
 
   async sync(options: SyncOptions) {
     this.config = new Config;
@@ -164,6 +168,7 @@ To reset to previous HEAD:
 
   private prepareOptions(options: SyncOptions) {
     Object.assign(this.options, options);
+    this.options.sourceDir = this.config.parseSourceDir(this.options.sourceDir).realSourceDir;
     this.options.filter = this.toArray(this.options.filter);
   }
 
@@ -171,8 +176,11 @@ To reset to previous HEAD:
     const sourceBranches = await this.parseBranches(this.source);
     const targetBranches = await this.parseBranches(this.target);
 
-    const sourceLogs = await this.getLogs(this.source, sourceBranches, this.sourcePaths);
-    const targetLogs = await this.getLogs(this.target, targetBranches, this.targetPaths);
+    let firstLog: string = '';
+    const sourceLogs = await this.getLogs(this.source, sourceBranches, this.sourcePaths, {}, this.target, this.targetPaths, (hash: string) => {
+      firstLog || (firstLog = hash);
+    });
+    const targetLogs = await this.getLogs(this.target, targetBranches, this.targetPaths, {}, this.source, this.sourcePaths);
 
     // 找到当前仓库有,而目标仓库没有的记录
     const newLogsDiff = this.objectValueDiff(sourceLogs, targetLogs);
@@ -219,34 +227,40 @@ To reset to previous HEAD:
       }
     }
 
-    const branch = await this.getBranchFromLog(sourceLogs);
-    this.currentBranch = this.defaultBranch = this.toLocalBranch(branch);
-
     const targetBranch = await this.target.getBranch();
     this.origBranch = targetBranch;
 
-    if (this.currentBranch && targetBranch !== this.defaultBranch) {
-      if (!targetBranches.includes(this.defaultBranch)) {
-        await this.target.run(['checkout', '-b', this.defaultBranch]);
-      } else {
-        await this.target.run(['checkout', this.defaultBranch]);
+
+    if (this.options.squash) {
+      await this.createSquashCommits(sourceBranches, targetBranches);
+    } else {
+      const branch = await this.getBranchFromLog(firstLog);
+      this.currentBranch = this.defaultBranch = this.toLocalBranch(branch);
+
+      if (this.currentBranch && targetBranch !== this.defaultBranch) {
+        if (!targetBranches.includes(this.defaultBranch)) {
+          await this.target.run(['checkout', '-b', this.defaultBranch]);
+        } else {
+          await this.target.run(['checkout', this.defaultBranch]);
+        }
       }
+
+      const hashes = _.reverse(Object.keys(newLogs));
+
+      const progressBar = this.createProgressBar(newCount);
+      for (let key in hashes) {
+        await this.applyPatch(hashes[key]);
+        this.tickProgressBar(progressBar)
+      }
+
+      log.info(
+        'Synced %s %s.',
+        theme.info(newCount.toString()),
+        this.pluralize('commit', newCount)
+      );
+
+      await this.syncBranches(sourceBranches, targetBranches);
     }
-
-    const progressBar = this.createProgressBar(newCount);
-    const hashes = _.reverse(Object.keys(newLogs));
-    for (let key in hashes) {
-      await this.applyPatch(hashes[key]);
-      this.tickProgressBar(progressBar)
-    }
-
-    log.info(
-      'Synced %s %s.',
-      theme.info(newCount.toString()),
-      this.pluralize('commit', newCount)
-    );
-
-    await this.syncBranches(sourceBranches, targetBranches);
 
     if (this.origBranch) {
       // If target is a new repository without commits, it doesn't have any branch
@@ -285,6 +299,203 @@ Please follow the steps to resolve the conflicts:
     if (!this.options.noTags) {
       await this.syncTags(filteredTags);
     }
+  }
+
+  private parseHash(hash: string) {
+    const fullHash = hash;
+
+    // Switch to target branch
+    let isCurBranch = hash.substr(0, 1) === '*';
+    hash = this.split(hash, '#')[1];
+    let parent: string;
+    [hash, parent] = this.split(hash, ' ');
+
+    // Use Git empty tree hash as first commit's parent
+    if (!parent) {
+      parent = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    }
+
+    return [hash, parent];
+  }
+
+  private async createSquashCommits(sourceBranches: any, targetBranches: any) {
+    log.debug('Start squash commit');
+
+    if (!sourceBranches.includes(this.options.squashBaseBranch)) {
+      throw new Error(`Squash branch "${this.options.squashBaseBranch}" does not exists`);
+    }
+    sourceBranches = this.moveToFirst(sourceBranches, this.options.squashBaseBranch);
+
+    let skipped = 0;
+    const progressBar = this.createProgressBar(Object.keys(sourceBranches).length);
+
+    for (let key in sourceBranches) {
+      let sourceBranch: string = sourceBranches[key];
+      await this.syncSquashBranch(sourceBranch, targetBranches);
+
+      this.tickProgressBar(progressBar)
+    }
+  }
+
+  private async syncSquashBranch(sourceBranch: string, targetBranches: string[]) {
+    let localBranch = this.toLocalBranch(sourceBranch);
+    const sourceBranchHash = await this.source.run(['rev-parse', sourceBranch]);
+
+    if (_.includes(targetBranches, sourceBranch)) {
+      let squashLogs = {};
+      const sourceLogs = await this.getLogs(this.source, [sourceBranch], this.sourcePaths, {}, this.target, this.targetPaths);
+      const targetLogs = await this.getLogs(this.target, [sourceBranch], this.targetPaths, squashLogs, this.source, this.sourcePaths);
+
+      if (localBranch === this.options.squashBaseBranch) {
+        // Record squash range from exists branch exists commits
+        this.targetSquashes = squashLogs;
+      }
+
+      // 找到当前仓库有,而目标仓库没有的记录
+      const newLogsDiff = this.objectValueDiff(sourceLogs, targetLogs);
+      const newLogs = await this.filterEmptyLogs(newLogsDiff);
+      this.detectHistorical(newLogs, sourceLogs);
+
+      const hashes = Object.keys(newLogs);
+      if (hashes.length === 0) {
+        log.debug(`Branch "${localBranch}" is up to date, skipping`);
+        return;
+      }
+
+      const [hash, sourceStartHash] = this.parseHash(hashes[hashes.length - 1]);
+      await this.target.run((['checkout', localBranch]));
+      const newHash = await this.createSquashCommit(sourceStartHash, sourceBranchHash, localBranch);
+
+      if (localBranch === this.options.squashBaseBranch) {
+        // Record squash range from exists branch new commit
+        this.targetSquashes[newHash] = newLogsDiff;
+      }
+
+      return;
+    }
+
+    const newHash = await this.createNewSquashBranch(sourceBranch);
+    if (localBranch === this.options.squashBaseBranch) {
+      // Record squash range from new branch new commit
+      this.targetSquashes[newHash] = await await this.getLogs(this.source, [sourceBranch], this.sourcePaths, {}, this.target, this.targetPaths);
+    }
+  }
+
+  private async createNewSquashBranch(sourceBranch: string) {
+    log.debug(`Target branch "${sourceBranch}" does not exist`);
+
+    let commitStartHash: string;
+    if (sourceBranch === this.options.squashBaseBranch) {
+      // Create new branch from root
+      commitStartHash = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    } else {
+      await this.target.run(['checkout', '-b', sourceBranch, this.options.squashBaseBranch]);
+      commitStartHash = await this.source.run(['rev-parse', this.options.squashBaseBranch]);
+    }
+
+    const commitEndHash = await this.source.run(['rev-parse', sourceBranch]);
+    return await this.createSquashCommit(commitStartHash, commitEndHash, sourceBranch, true);
+  }
+
+  private async createSquashCommit(startHash: string, endHash: string, branch: string, isNew: boolean = false) {
+    // merge
+    if (startHash.includes(' ')) {
+      const parents = startHash.split(' ');
+      if (this.isContains && !this.isHistorical) {
+        await this.overwrite(endHash, parents);
+      } else {
+        // TODO squash sync to conflict branch
+      }
+      await this.commitSquash(startHash, endHash);
+      return;
+    }
+
+    // Create patch
+    const args = this.withPaths([
+      'log',
+      '-p',
+      '--reverse',
+      '-m',
+      '--stat',
+      '--binary',
+      '--color=never',
+      // Commit body may contains *diff like* codes, which cause git-apply fail
+      // @see \GitSyncTest\Command\SyncCommandTest::testCommitBodyContainsDiff
+      '--format=%n',
+      startHash + '..' + endHash,
+    ], this.sourcePaths);
+
+    let patch = await this.source.run(args);
+
+    // Add new lines to avoid git-apply return error
+    // s
+    // """
+    // error: corrupt patch at line xxx
+    // error: could not build fake ancestor
+    // """
+    // @see sync src/Symfony/Bridge/Monolog/
+    //
+    // """
+    // error: corrupt binary patch at line xxx:
+    // """
+    // @see sync src/Symfony/Component/Form/
+    patch += "\n\n";
+
+    // Apply patch
+    let patchArgs = [
+      'apply',
+      '-3',
+      // @see \GitSyncTest\Command\SyncCommandTest::testApplySuccessWhenChangedLineEndings
+      '--ignore-whitespace',
+    ];
+
+    if (this.sourceDir && this.sourceDir !== '.') {
+      patchArgs.push('-p' + (this.strCount(this.sourceDir, '/') + 2));
+    }
+
+    if (this.targetDir && this.targetDir !== '.') {
+      patchArgs = patchArgs.concat([
+        '--directory',
+        this.targetDir,
+      ]);
+    }
+
+    try {
+      await this.target.run(patchArgs, {input: patch});
+    } catch (e) {
+      log.info('Apply patch fail, sync changes to conflict branch');
+
+      if (await this.target.hasCommit()) {
+        await this.target.run(['reset', '--hard', 'HEAD']);
+
+        if (!isNew) {
+          const conflictBranch = this.getConflictBranchName(branch);
+          await this.target.run([
+            'checkout',
+            '-b',
+            conflictBranch,
+            branch,
+          ]);
+          this.conflictBranches.push(branch);
+        }
+      }
+
+      await this.overwrite(endHash, [startHash]);
+    }
+
+    return await this.commitSquash(startHash, endHash);
+  }
+
+  private async commitSquash(startHash: string, endHash: string) {
+    // Ignore untracked files
+    await this.target.run(['add', '-u']);
+    await this.target.run([
+      'commit',
+      '--allow-empty',
+      '-am',
+      `chore(sync): squash commit from ${startHash} to ${endHash}`
+    ]);
+    return await this.target.run(['rev-parse', 'HEAD']);
   }
 
   private async getFilteredTags() {
@@ -466,13 +677,7 @@ Please follow the steps to resolve the conflicts:
   }
 
   protected async findTargetTagHash(sourceHash: string) {
-    const sourceDirHash = await this.source.run([
-      'log',
-      '--format=%h',
-      '-1',
-      sourceHash,
-      '--',
-    ].concat(this.sourcePaths));
+    const sourceDirHash = await this.findDirHash(sourceHash);
     if (!sourceDirHash) {
       return false;
     }
@@ -530,7 +735,7 @@ Please follow the steps to resolve the conflicts:
     }
 
     // Create patch
-    const args = [
+    const args = this.withPaths([
       'log',
       '-p',
       '--reverse',
@@ -543,8 +748,7 @@ Please follow the steps to resolve the conflicts:
       // @see \GitSyncTest\Command\SyncCommandTest::testCommitBodyContainsDiff
       '--format=%n',
       hash,
-      '--',
-    ].concat(this.sourcePaths);
+    ], this.sourcePaths);
 
     let patch = await this.source.run(args);
 
@@ -609,14 +813,13 @@ Please follow the steps to resolve the conflicts:
 
     if (!this.isConflict) {
       // 找到冲突前的记录，从这里开始创建branch
-      const log = await this.source.run([
+      const log = await this.source.run(this.withPaths([
         'log',
         '--format=%ct %B',
         '-1',
         '--skip=1',
         hash,
-        '--',
-      ].concat(this.sourcePaths));
+      ], this.sourcePaths));
 
       let targetHash;
       if (log) {
@@ -655,16 +858,17 @@ Please follow the steps to resolve the conflicts:
   }
 
   protected async overwrite(hash: string, parents: string[]) {
+    log.debug(`Start overwrite files from ${hash} to ${parents}`);
+
     let results = [];
     for (let i in parents) {
-      let result = await this.source.run([
+      let result = await this.source.run(this.withPaths([
         'diff-tree',
         '--name-status',
         '-r',
         parents[i],
         hash,
-        '--',
-      ].concat(this.sourcePaths));
+      ], this.sourcePaths));
       if (result) {
         results.push(result);
       }
@@ -731,7 +935,7 @@ Please follow the steps to resolve the conflicts:
 
       let dir = path.dirname(target);
       if (!fs.existsSync(dir)) {
-        await mkdir(path.dirname(target));
+        await mkdir(path.dirname(target), {recursive: true});
       }
       await rename(tempDir + '/' + file, target);
     }
@@ -765,7 +969,12 @@ Please follow the steps to resolve the conflicts:
     const progressBar = this.createProgressBar(filteredCount);
     for (let name in filterTags) {
       let tag: Tag = filterTags[name];
-      const targetHash = await this.findTargetTagHash(tag.hash);
+      let targetHash = await this.findTargetTagHash(tag.hash);
+
+      if (!targetHash) {
+        targetHash = await this.findTargetHashFromSquashLogs(tag.hash);
+      }
+
       if (!targetHash) {
         const result = await this.source.run([
           'log',
@@ -805,6 +1014,31 @@ Please follow the steps to resolve the conflicts:
       theme.info((filteredCount - skipped).toString()),
       theme.info(skipped.toString())
     );
+  }
+
+  private async findDirHash(sourceHash: string) {
+    return await this.source.run(this.withPaths([
+      'log',
+      '--format=%h',
+      '-1',
+      sourceHash,
+    ], this.sourcePaths));
+  }
+
+  private async findTargetHashFromSquashLogs(sourceHash: string) {
+    const sourceDirHash = await this.findDirHash(sourceHash);
+    if (!sourceDirHash) {
+      return false;
+    }
+
+    for (let targetHash in this.targetSquashes) {
+      for (let logHash in this.targetSquashes[targetHash]) {
+        if (logHash.includes('#' + sourceDirHash)) {
+          return targetHash;
+        }
+      }
+    }
+    return '';
   }
 
   protected async getTags(repo: Git) {
@@ -877,6 +1111,11 @@ Please follow the steps to resolve the conflicts:
     let [committerDate, authorDate, message] = this.explode(' ', log, 3);
     if (message.includes("\n")) {
       message = this.split(message, "\n")[0];
+    }
+
+    const match = this.parseSquashMessage(message);
+    if (match) {
+      return match[2];
     }
 
     // Here we assume that a person will not commit the same message in the same second.
@@ -991,7 +1230,7 @@ Please follow the steps to resolve the conflicts:
     }
   }
 
-  protected async getLogs(repo: Git, branches: string[], paths: string[]): Promise<StringStringMap> {
+  protected async getLogs(repo: Git, revisions: string[], paths: string[], squashLogs: any = {}, targetRepo: Git, targetPaths: string[], logCallback: Function = null) {
     // Check if the repo has commit, because "log" will return error code 128
     // with message "fatal: your current branch 'master' does not have any commits yet" when no commits
     if (!await repo.run(['rev-list', '-n', '1', '--all'])) {
@@ -1020,31 +1259,47 @@ Please follow the steps to resolve the conflicts:
       args.push('-' + this.options.maxCount);
     }
 
-    if (branches.length) {
-      args = args.concat(branches);
+    if (revisions.length) {
+      args = args.concat(revisions);
     } else {
       args.push('--all');
     }
 
     // Do not specify root directory, so that logs will contain *empty* commits (include merges)
-    if (paths.join() !== './') {
-      args = args.concat(['--'].concat(paths));
-    }
+    args = this.withPaths(args, paths);
 
-    let log = await repo.run(args);
-    if (!log) {
+    let result = await repo.run(args);
+    if (!result) {
       return {};
     }
 
     let logs: StringStringMap = {};
-    log.split("\n").forEach((row: string) => {
+    const rows = result.split('\n');
+    for (const index in rows) {
+      const row = rows[index];
+
       if (!row.includes('*')) {
-        return;
+        continue;
       }
 
       const [hash, detail] = this.split(row, '-');
+
+      if (logCallback) {
+        logCallback(hash, detail);
+      }
+
+      // Expand squashed commit
+      const matches = this.parseSquashMessage(detail);
+      if (matches) {
+        log.debug(`Expand squashed commits from ${matches[1]} to ${matches[2]}`);
+        const [squashHash] = this.parseHash(hash);
+        squashLogs[squashHash] = await this.getLogs(targetRepo, [matches[1] + '..' + matches[2]], targetPaths, squashLogs, repo, paths);
+        logs = Object.assign(logs, squashLogs[squashHash]);
+        continue;
+      }
+
       logs[hash] = detail;
-    });
+    }
     return logs;
   }
 
@@ -1147,8 +1402,7 @@ Please follow the steps to resolve the conflicts:
     return branches;
   }
 
-  protected async getBranchFromLog(logs: StringStringMap) {
-    let log = this.getFirstKey(logs)
+  protected async getBranchFromLog(log: string) {
     if (!log) {
       return '';
     }
@@ -1295,6 +1549,31 @@ Please follow the steps to resolve the conflicts:
     if (npmlog.levels[npmlog.level] <= npmlog.levels.info) {
       progressBar.tick();
     }
+  }
+
+  private withPaths(args: string[], paths: string[]) {
+    // Do not specify root directory, so that logs will contain *empty* commits (include merges)
+    if (paths.length === 1 && paths[0] === './') {
+      return args;
+    }
+    return args.concat(['--'].concat(paths));
+  }
+
+  private parseSquashMessage(message: string) {
+    if (message.includes('chore(sync): squash commit from')) {
+      const matches = /chore\(sync\): squash commit from (.+?) to (.+?)$/.exec(message);
+      if (!matches) {
+        log.debug(`Cannot parse squash revisions in message: ${message}`);
+      }
+      return matches;
+    }
+    return null;
+  }
+
+  private moveToFirst(array: any, element: any) {
+    array.splice(array.indexOf(element), 1);
+    array.unshift(element);
+    return array;
   }
 }
 
