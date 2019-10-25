@@ -304,7 +304,7 @@ describe('sync command', () => {
     expect(tags).toContain('1.0.0');
   });
 
-  test('sourceDir argument', async () => {
+  test('sourceDir option', async () => {
     const source = await createRepo();
     await source.commitFile('package-name/package.txt');
 
@@ -317,7 +317,20 @@ describe('sync command', () => {
     expect(fs.existsSync(target.getFile('package.txt'))).toBe(true);
   });
 
-  test('targetDir argument', async () => {
+  test('sourceDir option start with ./', async () => {
+    const source = await createRepo();
+    await source.commitFile('package-name/package.txt');
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: './package-name'
+    });
+
+    expect(fs.existsSync(target.getFile('package.txt'))).toBe(true);
+  });
+
+  test('targetDir option', async () => {
     const source = await createRepo();
     await source.commitFile('test.txt');
 
@@ -858,7 +871,7 @@ The conflict branch:
 
 Please follow the steps to resolve the conflicts:
 
-    1. cd ${target.dir}/.
+    1. cd ${target.dir}/
     2. git checkout BRANCH-NAME // Replace BRANCH-NAME to your branch name
     3. git merge BRANCH-NAME-gitsync-conflict
     4. // Follow the tips to resolve the conflicts

@@ -66,8 +66,6 @@ class Sync {
   private initHash: string;
   private source: Git;
   private target: Git;
-  private sourceDir: string;
-  private targetDir: string;
   private currentBranch: string;
   private defaultBranch: string;
   private origBranch: string;
@@ -87,7 +85,7 @@ class Sync {
 
   async sync(options: SyncOptions) {
     this.config = new Config;
-    this.prepareOptions(options);
+    this.initOptions(options);
 
     this.source = git('.');
 
@@ -95,13 +93,6 @@ class Sync {
     if (await this.target.run(['status', '--short'])) {
       throw new Error(`Target repository "${this.target.dir}" has uncommitted changes, please commit or remove changes before syncing.`);
     }
-
-    this.sourceDir = this.options.sourceDir;
-    this.targetDir = this.options.targetDir;
-
-    // TODO move to prepareOptions
-    this.options.sourceDir = path.normalize(this.options.sourceDir + '/');
-    this.options.targetDir = path.normalize(this.options.targetDir + '/');
 
     // @link https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspecapathspec
     const regex = /^:(!|\^|\/|\([a-z,]+\))(.+?)$/;
@@ -166,9 +157,11 @@ To reset to previous HEAD:
     }
   }
 
-  private prepareOptions(options: SyncOptions) {
+  private initOptions(options: SyncOptions) {
     Object.assign(this.options, options);
-    this.options.sourceDir = this.config.parseSourceDir(this.options.sourceDir).realSourceDir;
+    // append a slash to make sure it's a dir, rather than a file
+    this.options.sourceDir = path.normalize(this.config.parseSourceDir(this.options.sourceDir).realSourceDir + '/');
+    this.options.targetDir = path.normalize(this.options.targetDir + '/');
     this.options.filter = this.toArray(this.options.filter);
   }
 
@@ -286,7 +279,7 @@ The conflict ${this.pluralize('branch', branchCount, 'es')}:
 ${branchTips}
 Please follow the steps to resolve the conflicts:
 
-    1. cd ${this.target.dir}/${this.targetDir}
+    1. cd ${path.join(this.target.dir, this.options.targetDir)}
     2. git checkout BRANCH-NAME // Replace BRANCH-NAME to your branch name
     3. git merge ${this.getConflictBranchName('BRANCH-NAME')}
     4. // Follow the tips to resolve the conflicts
@@ -443,14 +436,12 @@ Please follow the steps to resolve the conflicts:
       '--ignore-whitespace',
     ];
 
-    if (this.sourceDir && this.sourceDir !== '.') {
-      patchArgs.push('-p' + (this.strCount(this.sourceDir, '/') + 2));
-    }
+    patchArgs.push('-p' + this.getPathDepth(this.options.sourceDir));
 
-    if (this.targetDir && this.targetDir !== '.') {
+    if (this.options.targetDir !== './') {
       patchArgs = patchArgs.concat([
         '--directory',
-        this.targetDir,
+        this.options.targetDir,
       ]);
     }
 
@@ -768,14 +759,12 @@ Please follow the steps to resolve the conflicts:
       '--ignore-whitespace',
     ];
 
-    if (this.sourceDir && this.sourceDir !== '.') {
-      patchArgs.push('-p' + (this.strCount(this.sourceDir, '/') + 2));
-    }
+    patchArgs.push('-p' + this.getPathDepth(this.options.sourceDir));
 
-    if (this.targetDir && this.targetDir !== '.') {
+    if (this.options.targetDir !== './') {
       patchArgs = patchArgs.concat([
         '--directory',
-        this.targetDir,
+        this.options.targetDir,
       ]);
     }
 
@@ -872,17 +861,11 @@ Please follow the steps to resolve the conflicts:
       return;
     }
 
-    // TODO normalize
-    let sourceDir = this.sourceDir;
-    if (this.sourceDir === '.') {
-      sourceDir = '';
-    }
-
     let removeLength: number;
-    if (sourceDir) {
-      removeLength = sourceDir.length + 1;
-    } else {
+    if (this.options.sourceDir === './') {
       removeLength = 0;
+    } else {
+      removeLength = this.options.sourceDir.length + 1;
     }
 
     const files: StringStringMap = this.parseChangedFiles(results.join('\n'));
@@ -908,7 +891,7 @@ Please follow the steps to resolve the conflicts:
       '--',
     ].concat(updateFiles));
 
-    const targetFullDir = this.target.dir + '/' + this.targetDir;
+    const targetFullDir = this.target.dir + '/' + this.options.targetDir;
 
     // Delete first and then update, so that when the change is renamed,
     // ensure that the file will not be deleted.
@@ -924,7 +907,7 @@ Please follow the steps to resolve the conflicts:
       let file = updateFiles[key];
       let targetFile = file.substr(removeLength);
 
-      targetFiles.push(path.join(this.targetDir, targetFile));
+      targetFiles.push(path.join(this.options.targetDir, targetFile));
       let target = targetFullDir + '/' + targetFile;
 
       let dir = path.dirname(target);
@@ -1528,10 +1511,6 @@ Please follow the steps to resolve the conflicts:
     return name + '-gitsync-conflict';
   }
 
-  protected strCount(string: string, search: string) {
-    return string.split(search).length - 1
-  }
-
   protected createProgressBar(total: number) {
     return new ProgressBar(':bar :current/:total :etas', {
       total: total,
@@ -1568,6 +1547,13 @@ Please follow the steps to resolve the conflicts:
     array.splice(array.indexOf(element), 1);
     array.unshift(element);
     return array;
+  }
+
+  private getPathDepth(path: string) {
+    if (path === './') {
+      return 1;
+    }
+    return path.split('/').length;
   }
 }
 
