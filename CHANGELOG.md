@@ -1,3 +1,13 @@
+## [0.6.1](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.0...@gitsync/sync@0.6.1) (2020-08-06)
+
+
+
+
+
+### Dependencies
+
+* **@gitsync/config:** upgrade from 0.6.0 to 0.6.1
+
 # [0.6.0](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.5.1...@gitsync/sync@0.6.0) (2020-07-21)
 
 
