@@ -1592,7 +1592,7 @@ To reset to previous HEAD:
     });
 
     // Commit exists, wont be reset
-    expect(await target.run(['log', '--format=%s', '-1'])).toBe("Merge branch 'branch'");
+    expect(await target.run(['log', '--format=%s', '-1'])).toContain("Merge branch 'branch'");
   });
 
   test('sync branch at empty commit from sub directory will lost empty commit', async () => {
@@ -1691,6 +1691,21 @@ To reset to previous HEAD:
     });
 
     expect(error).toBeUndefined();
+  });
+
+  test('sync dir\'s last commit contains tag but not repo HEAD', async () => {
+    const source = await createRepo();
+    await source.commitFile('packages/test.txt');
+    await source.run(['tag', 'v1.0.0']);
+    await source.commitFile('root.txt');
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: 'packages',
+    });
+
+    expect(fs.existsSync(target.getFile('test.txt'))).toBeTruthy();
   });
 
   test('filter to ignore one file', async () => {
