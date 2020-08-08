@@ -1,3 +1,10 @@
+## [0.6.2](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.1...@gitsync/sync@0.6.2) (2020-08-08)
+
+
+### Bug Fixes
+
+* sync fail when dir's last commit contains tag but not repo HEAD ([d2733cb](https://github.com/twinh/gitsync/commit/d2733cb03397cf04b8275f80593dd7b47c63fff9))
+
 ## [0.6.1](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.0...@gitsync/sync@0.6.1) (2020-08-06)
 
 
