@@ -1,3 +1,10 @@
+## [0.6.3](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.2...@gitsync/sync@0.6.3) (2021-03-23)
+
+
+### Bug Fixes
+
+* **sync:** Checkout remote branch at remote hash, instead of HEAD(master) ([47a35e7](https://github.com/twinh/gitsync/commit/47a35e783e83e0aa5588f2a9aca0de1c94fdfb5d))
+
 ## [0.6.2](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.1...@gitsync/sync@0.6.2) (2020-08-08)
 
 
