@@ -1,3 +1,10 @@
+## [0.6.4](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.3...@gitsync/sync@0.6.4) (2021-03-24)
+
+
+### Bug Fixes
+
+* **sync:** update branch should ignore non-existent branch ([478ff46](https://github.com/twinh/gitsync/commit/478ff46821b656c1d736438923b84c69c39a4c51))
+
 ## [0.6.3](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.2...@gitsync/sync@0.6.3) (2021-03-23)
 
 
