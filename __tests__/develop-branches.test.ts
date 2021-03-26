@@ -51,6 +51,35 @@ describe('develop branches option', () => {
     expect(await target.run(['log', '-n', '1', 'develop'])).toContain('add test.txt');
   });
 
+  test('micromatch', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    await source.run(['checkout', '-b', 'develop']);
+    await source.commitFile('test2.txt');
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+      developBranches: ['develop/**'],
+    });
+    expect(await target.run(['log', '-n', '1', 'develop'])).toContain('add test2.txt');
+
+    // Remove the last commit
+    await source.run(['reset', '--hard', 'HEAD~1']);
+
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+      developBranches: ['develop/**'],
+    });
+
+    // Re-sync without the last commit
+    expect(await target.run(['log', '-n', '1', 'develop'])).toContain('add test.txt');
+  });
+
   test('branch is checked out error', async () => {
     const source = await createRepo();
     await source.commitFile('test.txt');

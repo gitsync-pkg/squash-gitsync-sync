@@ -1,3 +1,18 @@
+## [0.6.5](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.4...@gitsync/sync@0.6.5) (2021-03-25)
+
+
+### Features
+
+* add `developBranches` option, specify the name of the branch, matching the given glob, to be deleted and resynchronized ([fe3ab0e](https://github.com/twinh/gitsync/commit/fe3ab0ef971ed1f28c103d78bb21b1f16fec0eb3))
+
+
+
+
+
+### Dependencies
+
+* **@gitsync/config:** upgrade from 0.6.1 to 0.6.2
+
 ## [0.6.4](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.3...@gitsync/sync@0.6.4) (2021-03-24)
 
 
