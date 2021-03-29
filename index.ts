@@ -234,7 +234,12 @@ To reset to previous HEAD:
     );
     const targetLogs = await this.getLogs(
       this.target,
-      this.diff(targetBranches, developBranches),
+      targetBranches.filter(branch => {
+        if (branch.startsWith('origin/')) {
+          branch = branch.substr(7);
+        }
+        return !developBranches.includes(branch)
+      }),
       this.targetPaths,
       {},
       this.source,

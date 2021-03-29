@@ -6,8 +6,9 @@ import {
   createRepo, catchError
 } from '@gitsync/test';
 import Sync, {SyncOptions} from "..";
-import {Git} from "git-cli-wrapper";
+import git, {Git} from "git-cli-wrapper";
 import log from '@gitsync/log';
+import * as tmp from "tmp-promise";
 
 const sync = async (source: Git, options: SyncOptions, instance: Sync = null) => {
   changeDir(source);
@@ -16,6 +17,12 @@ const sync = async (source: Git, options: SyncOptions, instance: Sync = null) =>
   await sync.sync(options);
   resetDir();
 };
+
+async function cloneRepo(dir: string) {
+  const repo = git((await tmp.dir()).path);
+  await repo.run(['clone', dir, '.']);
+  return repo;
+}
 
 describe('develop branches option', () => {
   afterEach(() => {
@@ -122,5 +129,38 @@ describe('develop branches option', () => {
     });
 
     expect(await target.run(['branch'])).toContain('develop');
+  });
+
+  test('old commit should not lost', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    await source.run(['checkout', '-b', 'develop']);
+    await source.commitFile('test2.txt');
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      developBranches: ['develop'],
+    });
+
+    // Push target to remote
+    const targetBare = await createRepo(true);
+    await target.run(['remote', 'add', 'origin', targetBare.dir]);
+    await target.run(['push', 'origin', '--all']);
+
+    // Sync new commit to new cloned target
+    await source.commitFile('test3.txt');
+    const target2 = await cloneRepo(targetBare.dir);
+    await sync(source, {
+      target: target2.dir,
+      sourceDir: '.',
+      developBranches: ['develop'],
+    });
+
+    // Old commit should not lost
+    const log = await target2.run(['log', '--all']);
+    expect(log).toContain('add test2.txt');
   });
 });

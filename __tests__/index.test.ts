@@ -2330,4 +2330,35 @@ chore(sync): squash commits from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ${s
     const message = logMessage();
     expect(message).toContain('Target doesnt have branch "develop", skipping');
   });
+
+  test('cherry-pick not support', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    await source.run(['checkout', '-b', 'develop']);
+    await source.commitFile('test2.txt');
+    const hash = await source.run(['rev-parse', 'HEAD']);
+
+    await source.commitFile('test3.txt');
+
+    await source.run(['checkout', 'master']);
+    await source.commitFile('test4.txt');
+
+    await source.run(['cherry-pick', hash]);
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+
+    const error = await catchError(async () => {
+      await sync(source, {
+        target: targetDir,
+        sourceDir: '.',
+        developBranches: ['develop'],
+      });
+    });
+
+    expect(error.message).toContain('Expected to return one commit, but returned more than one commit with the same message in the same second');
+    expect(error.message).toContain('add test2.txt');
+    expect(error.message).toContain(hash);
+  });
 });
