@@ -36,6 +36,7 @@ export interface SyncOptions {
   squash?: boolean;
   squashBaseBranch?: string;
   developBranches?: string[];
+  skipEvenBranch?: boolean;
   plugins?: ConfigPlugin[];
 }
 
@@ -72,6 +73,7 @@ class Sync {
     addTagPrefix: '',
     removeTagPrefix: '',
     squashBaseBranch: 'master',
+    skipEvenBranch: false,
     plugins: [],
   };
 
@@ -685,7 +687,7 @@ Please follow the steps to resolve the conflicts:
       const sourceBranch: string = sourceBranches[key];
 
       if (!_.includes(targetBranches, sourceBranch)) {
-        const result = await this.createOrUpdateTargetBranch(sourceBranch);
+        const result = await this.createOrUpdateTargetBranch(sourceBranch, this.options.skipEvenBranch);
         if (!result) {
           skipped++;
         }
@@ -749,10 +751,24 @@ Please follow the steps to resolve the conflicts:
     );
   }
 
-  protected async createOrUpdateTargetBranch(sourceBranch: string) {
+  protected async createOrUpdateTargetBranch(sourceBranch: string, skipEvenBranch: boolean = false) {
     const sourceHash = await this.source.run(['rev-parse', sourceBranch]);
     const targetHash = await this.findTargetTagHash(sourceHash);
     if (targetHash) {
+
+      if (skipEvenBranch) {
+        const hashBranches = await this.getHashBranches(targetHash);
+        if (
+          hashBranches.length
+          // NOTE: Git will create "master" branch for the first commit,
+          // so `hashBranches` will contains "master", and `sourceBranch` will be "master"
+          && !hashBranches.includes(sourceBranch)
+        ) {
+          log.info('Skip creating branch "%s", which is even with: %s', sourceBranch, hashBranches.join(', '));
+          return false;
+        }
+      }
+
       // Cannot update the current branch, so use reset instead
       sourceBranch = this.toLocalBranch(sourceBranch);
       if (sourceBranch === this.currentBranch) {
@@ -774,6 +790,28 @@ Please follow the steps to resolve the conflicts:
     }
     await this.logCommitNotFound(sourceHash, sourceBranch);
     return false;
+  }
+
+  private async getHashBranches(targetHash: string): Promise<string[]> {
+    let result = await this.target.log(['--format=%D', '-1', targetHash]);
+    if (!result) {
+      return [];
+    }
+
+    const branches: string[] = [];
+    for (const ref of result.split(', ')) {
+      if (ref.startsWith('tag: ')) {
+        continue;
+      }
+
+      if (ref.includes(' -> ')) {
+        branches.push(ref.split(' -> ')[1]);
+      } else {
+        branches.push(ref);
+      }
+      break;
+    }
+    return branches;
   }
 
   protected async findTargetTagHash(sourceHash: string) {

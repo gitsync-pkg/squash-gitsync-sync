@@ -72,4 +72,29 @@ describe('branch', () => {
     const message = logMessage();
     expect(message).toContain('Sync target from branch: develop');
   });
+
+  test('skipEvenBranch', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+    });
+
+    await source.run(['checkout', '-b', 'develop']);
+
+    clearMessage();
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+      skipEvenBranch: true,
+    });
+
+    expect(await target.run(['branch', '-l'])).not.toContain('develop');
+
+    expect(logMessage()).toContain('Skip creating branch "develop", which is even with: master');
+  });
 });
