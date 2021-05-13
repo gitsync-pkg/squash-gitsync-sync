@@ -7,7 +7,6 @@ import {
 } from '@gitsync/test';
 import Sync, {SyncOptions} from "..";
 import {Git} from "git-cli-wrapper";
-import * as npmlog from "npmlog";
 
 const sync = async (source: Git, options: SyncOptions, instance: Sync = null) => {
   changeDir(source);
@@ -39,7 +38,7 @@ describe('branch', () => {
     // "develop" is the first found branch
     // but both contain the "master" branch
     // so sync from the "master" branch
-    
+
     const result = await source.log(['--format=%D', '-1', 'HEAD']);
     expect(result).toBe('HEAD -> develop, master');
 
@@ -55,5 +54,22 @@ describe('branch', () => {
     const message = logMessage();
     expect(message).toContain('Sync target from branch: master');
     expect(message).not.toContain('Sync target from branch: develop');
+  });
+
+  test('Sync new repo will use first found branch', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+
+    await source.run(['checkout', '-b', 'develop']);
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+    });
+
+    const message = logMessage();
+    expect(message).toContain('Sync target from branch: develop');
   });
 });
