@@ -1,3 +1,19 @@
+## [0.6.6](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.5...@gitsync/sync@0.6.6) (2021-03-29)
+
+
+### Bug Fixes
+
+* **develop-branches:** ignore history in origin branches to avoid old commit lost ([0a255a1](https://github.com/twinh/gitsync/commit/0a255a1bf10c284bdd1bda2f4581617f6b192e19))
+
+
+
+
+
+### Dependencies
+
+* **@gitsync/config:** upgrade from `0.6.2` to `0.6.3`
+* **@gitsync/test:** upgrade from `0.5.0` to `0.5.1`
+
 ## [0.6.5](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.4...@gitsync/sync@0.6.5) (2021-03-25)
 
 

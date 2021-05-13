@@ -305,7 +305,9 @@ To reset to previous HEAD:
     if (this.options.squash) {
       await this.createSquashCommits(sourceBranches, targetBranches);
     } else {
-      const branch = await this.getBranchFromLog(firstLog);
+      const branch = await this.getBranchFromLog(firstLog, targetBranches);
+      log.info('Sync target from branch: %s', branch);
+
       this.currentBranch = this.defaultBranch = this.toLocalBranch(branch);
 
       if (this.currentBranch && targetBranch !== this.defaultBranch) {
@@ -1467,7 +1469,7 @@ Please follow the steps to resolve the conflicts:
     return branches;
   }
 
-  protected async getBranchFromLog(log: string) {
+  protected async getBranchFromLog(log: string, targetBranches: any) {
     if (!log) {
       return '';
     }
@@ -1482,6 +1484,7 @@ Please follow the steps to resolve the conflicts:
       // 2. tag: 1.0.1, tag: 1.0.0, origin/branch
       // 3. tag: 1.0.0
       let branch = '';
+      let containBranches = [];
       for (const ref of result.split(', ')) {
         if (ref.startsWith('tag: ')) {
           continue;
@@ -1492,17 +1495,30 @@ Please follow the steps to resolve the conflicts:
         } else {
           branch = ref;
         }
-        break;
+        containBranches.push(branch);
       }
-      if (branch) {
-        return branch;
+
+      if (containBranches.length) {
+        return this.getExistBranches(containBranches, targetBranches);
       }
     }
 
+    // Example:
+    //   develop/article
+    // * master
     result = await this.source.run(['branch', '--no-color', '--contains', hash]);
-    // Example: * master
-    const branch = this.split(result, '\n')[0];
-    return branch.substr(2);
+    const containBranches = result.split('\n').map(line => line.substr(2));
+    return this.getExistBranches(containBranches, targetBranches);
+  }
+
+  private getExistBranches(containBranches: any, targetBranches: any) {
+    // The first log may belong to multiple branches,
+    // prioritize sync from the first existing branch instead of the first found branch
+    const existBranches = _.intersection(containBranches, targetBranches);
+    if (existBranches.length) {
+      return existBranches[0];
+    }
+    return containBranches[0];
   }
 
   protected toLocalBranch(branch: string) {
