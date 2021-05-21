@@ -217,6 +217,20 @@ To reset to previous HEAD:
     return this.filter(branches, this.options.developBranches, []);
   }
 
+  private async getTargetLogBranches(targetBranches: string[]) {
+    return targetBranches.filter(branch => {
+      if (branch.startsWith('origin/')) {
+        branch = branch.substr(7);
+      }
+
+      if (this.options.developBranches && micromatch([branch], this.options.developBranches).length) {
+        return false;
+      }
+
+      return true;
+    })
+  }
+
   protected async syncCommits() {
     const sourceBranches = await this.parseBranches(this.source);
     let targetBranches = await this.parseBranches(this.target);
@@ -236,12 +250,7 @@ To reset to previous HEAD:
     );
     const targetLogs = await this.getLogs(
       this.target,
-      targetBranches.filter(branch => {
-        if (branch.startsWith('origin/')) {
-          branch = branch.substr(7);
-        }
-        return !developBranches.includes(branch)
-      }),
+      await this.getTargetLogBranches(targetBranches),
       this.targetPaths,
       {},
       this.source,
@@ -274,7 +283,9 @@ To reset to previous HEAD:
     );
 
     this.isContains = sourceCount - targetCount === newCount;
-    log.debug(`source repository ${this.isContains ? 'contains' : 'does not contain'} target repostitory`);
+    log[this.isContains ? 'debug' : 'warn'](
+      `Source repository ${this.isContains ? 'contains' : 'does not contain'} target repository`
+    );
 
     let filteredTags;
     if (!this.options.noTags) {

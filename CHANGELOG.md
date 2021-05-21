@@ -1,3 +1,18 @@
+## [0.6.7](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.6...@gitsync/sync@0.6.7) (2021-05-13)
+
+
+### Features
+
+* add `skipEvenBranch` option, which is use to not create new branch that have no commits ([4e9974b](https://github.com/twinh/gitsync/commit/4e9974bde695e3d70d6c433d936378f495039730))
+
+
+
+
+
+### Dependencies
+
+* **@gitsync/config:** upgrade from `0.6.3` to `0.6.4`
+
 ## [0.6.6](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.5...@gitsync/sync@0.6.6) (2021-03-29)
 
 

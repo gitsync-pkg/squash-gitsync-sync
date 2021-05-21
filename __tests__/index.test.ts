@@ -2361,4 +2361,27 @@ chore(sync): squash commits from 4b825dc642cb6eb9a060e54bf8d69288fbee4904 to ${s
     expect(error.message).toContain('add test2.txt');
     expect(error.message).toContain(hash);
   });
+
+  test('source does not contains target will log message', async () => {
+    const source = await createRepo();
+    await source.commitFile('test1.txt');
+
+    const target = await createRepo();
+    const targetDir = path.resolve(target.dir);
+
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+    });
+
+    await target.commitFile('test2.txt');
+
+    clearMessage();
+    await sync(source, {
+      target: targetDir,
+      sourceDir: '.',
+    });
+
+    expect(logMessage()).toContain('Source repository does not contain target repository');
+  });
 });

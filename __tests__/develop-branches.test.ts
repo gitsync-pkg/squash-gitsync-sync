@@ -163,4 +163,49 @@ describe('develop branches option', () => {
     const log = await target2.run(['log', '--all']);
     expect(log).toContain('add test2.txt');
   });
+
+  test('ignore target develop branch logs', async () => {
+    const source = await createRepo();
+    await source.commitFile('test.txt');
+    const defaultBranch = await source.getBranch();
+
+    await source.run(['checkout', '-b', 'develop']);
+    await source.commitFile('test2.txt');
+
+    const target = await createRepo();
+    await sync(source, {
+      target: target.dir,
+      sourceDir: '.',
+      developBranches: ['develop'],
+    });
+
+    // Push target to remote
+    const targetBare = await createRepo(true);
+    await target.run(['remote', 'add', 'origin', targetBare.dir]);
+    await target.run(['push', 'origin', '--all']);
+
+    // Simulate the release process:
+
+    // 1. Rebase to the main branch
+    await source.run(['rebase', 'develop', defaultBranch]);
+
+    // 2. Commit a new record
+    await source.commitFile('release.txt');
+
+    // 3. Delete the develop branch
+    // IMPORTANT: Target contains develop branch, while source does not contain develop branch
+    await source.run(['branch', '-d', 'develop']);
+
+    // 4. Sync to remote
+    const target2 = await cloneRepo(targetBare.dir);
+
+    await sync(source, {
+      target: target2.dir,
+      sourceDir: '.',
+      developBranches: ['develop'],
+    });
+
+    const branches = await target2.run(['branch', '-a', '--merged', 'master']);
+    expect(branches).toContain('origin/develop');
+  });
 });
