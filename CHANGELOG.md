@@ -1,3 +1,15 @@
+## [0.6.8](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.7...@gitsync/sync@0.6.8) (2021-05-21)
+
+
+### Bug Fixes
+
+* **sync:** ignore target develop branch logs ([2adcf3c](https://github.com/twinh/gitsync/commit/2adcf3ce256274fff16fa1d4f04ddc28df5dded3))
+
+
+### Features
+
+* log warning message when source repository does not contain repository ([fbff9d3](https://github.com/twinh/gitsync/commit/fbff9d37796e28caa87ce4cb45077edd27c77bc5))
+
 ## [0.6.7](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.6...@gitsync/sync@0.6.7) (2021-05-13)
 
 
