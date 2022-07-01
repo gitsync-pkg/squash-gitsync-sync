@@ -939,12 +939,12 @@ Please follow the steps to resolve the conflicts:
         }
         await this.overwrite(hash, parents);
       } else {
-        if (!this.isConflict) {
-          await this.syncToConflictBranch(hash);
-          await this.applyPatch(fullHash);
-          return;
-        }
         await this.syncToConflictBranch(hash);
+        if (!this.isConflict) {
+          await this.overwrite(hash, parents);
+        } else {
+          await this.applyPatch(fullHash);
+        }
       }
     }
 

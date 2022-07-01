@@ -1,6 +1,6 @@
 {
   "name": "@gitsync/sync",
-  "version": "0.6.8",
+  "version": "0.6.9",
   "description": "Sync commits to another repository",
   "keywords": [
     "gitsync",
@@ -27,7 +27,7 @@
     "prepare": "yarn build"
   },
   "dependencies": {
-    "@gitsync/config": "^0.6.4",
+    "@gitsync/config": "^0.6.5",
     "@gitsync/log": "^0.4.0",
     "@types/inquirer": "^6.5.0",
     "@types/lodash": "^4.14.138",
@@ -35,7 +35,7 @@
     "@types/progress": "^2.0.3",
     "@types/yargs": "^13.0.2",
     "chalk-theme": "^0.2.3",
-    "git-cli-wrapper": "^0.3.2",
+    "git-cli-wrapper": "^0.3.3",
     "inquirer": "^7.0.0",
     "lodash": "^4.17.15",
     "micromatch": "^4.0.2",
@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@types/node": "^14.0.27",
-    "@gitsync/test": "^0.5.1",
+    "@gitsync/test": "^0.5.2",
     "@types/jest": "^24.0.18",
     "coveralls": "^3.0.6",
     "jest": "^24.9.0",

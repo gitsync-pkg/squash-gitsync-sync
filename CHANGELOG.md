@@ -1,3 +1,15 @@
+## [0.6.9](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.8...@gitsync/sync@0.6.9) (2021-09-17)
+
+
+
+
+
+### Dependencies
+
+* **@gitsync/config:** upgrade from `0.6.4` to `0.6.5`
+* **git-cli-wrapper:** upgrade from `0.3.2` to `0.3.3`
+* **@gitsync/test:** upgrade from `0.5.1` to `0.5.2`
+
 ## [0.6.8](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.7...@gitsync/sync@0.6.8) (2021-05-21)
 
 
