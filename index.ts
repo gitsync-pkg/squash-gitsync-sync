@@ -939,12 +939,12 @@ Please follow the steps to resolve the conflicts:
         }
         await this.overwrite(hash, parents);
       } else {
-        await this.syncToConflictBranch(hash);
         if (!this.isConflict) {
-          await this.overwrite(hash, parents);
-        } else {
+          await this.syncToConflictBranch(hash);
           await this.applyPatch(fullHash);
+          return;
         }
+        await this.syncToConflictBranch(hash);
       }
     }
 
@@ -1500,8 +1500,8 @@ Please follow the steps to resolve the conflicts:
         name = name.substr(8);
       }
 
-      // Ignore "remotes/origin/HEAD -> origin/1.0"
-      if (name.includes('origin/HEAD -> ')) {
+      // Ignore "remotes/*/HEAD -> */1.0"
+      if (name.includes('/HEAD -> ')) {
         return;
       }
 
