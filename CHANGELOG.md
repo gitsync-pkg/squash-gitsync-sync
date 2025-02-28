@@ -1,3 +1,10 @@
+## [0.6.10](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.9...@gitsync/sync@0.6.10) (2022-07-01)
+
+
+### Features
+
+* support custom remote name (not "origin") ([73aa6d8](https://github.com/twinh/gitsync/commit/73aa6d8d453d579940eac070f87d748e55770898))
+
 ## [0.6.9](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.8...@gitsync/sync@0.6.9) (2021-09-17)
 
 

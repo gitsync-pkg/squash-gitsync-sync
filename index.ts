@@ -33,6 +33,7 @@ export interface SyncOptions {
   addTagPrefix?: string;
   removeTagPrefix?: string;
   filter?: string[];
+  filterTarget?: boolean;
   squash?: boolean;
   squashBaseBranch?: string;
   developBranches?: string[];
@@ -154,7 +155,9 @@ class Sync {
       }
 
       this.sourcePaths.push(pathPrefix + this.options.sourceDir + pathSuffix);
-      this.targetPaths.push(pathPrefix + this.options.targetDir + pathSuffix);
+      if (this.options.filterTarget !== false) {
+        this.targetPaths.push(pathPrefix + this.options.targetDir + pathSuffix);
+      }
     });
     if (!this.options.filter.length) {
       this.sourcePaths.push(this.options.sourceDir);
