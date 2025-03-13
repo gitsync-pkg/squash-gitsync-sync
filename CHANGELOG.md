@@ -1,3 +1,10 @@
+## [0.6.11](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.10...@gitsync/sync@0.6.11) (2025-02-28)
+
+
+### Features
+
+* **sync:** add option to disable filtering for target repository ([47b099b](https://github.com/twinh/gitsync/commit/47b099bbd1d58d0a34ad2a2f0f63d5642694e6ad))
+
 ## [0.6.10](https://github.com/twinh/gitsync/compare/@gitsync/sync@0.6.9...@gitsync/sync@0.6.10) (2022-07-01)
 
 
