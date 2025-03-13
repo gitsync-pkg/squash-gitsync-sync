@@ -554,7 +554,7 @@ Please follow the steps to resolve the conflicts:
       this.sourcePaths,
     );
 
-    let patch = await this.source.run(args);
+    let patch = await this.source.run(args, {trimEnd: false});
 
     // Add new lines to avoid git-apply return error
     // s
@@ -903,7 +903,7 @@ Please follow the steps to resolve the conflicts:
       this.sourcePaths,
     );
 
-    let patch = await this.source.run(args);
+    let patch = await this.source.run(args, {trimEnd: false});
 
     // Add new lines to avoid git-apply return error
     // s
